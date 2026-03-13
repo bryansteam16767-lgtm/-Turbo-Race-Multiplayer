@@ -74,6 +74,75 @@ const isPointOnTrackMath = (x: number, y: number, buffer: number = 0): boolean =
   return minDist <= (TRACK_RADIUS + buffer);
 };
 
+// Minimap Component
+const Minimap = ({ players, localPlayer, myId }: { players: Record<string, Player>, localPlayer: React.MutableRefObject<any>, myId: string }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scale = 0.15; // Scale down the track for the minimap
+  const padding = 20;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+
+    const render = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Track
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 15 * scale;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.beginPath();
+      TRACK_SEGMENTS.forEach((seg, i) => {
+        if (i === 0) ctx.moveTo(seg.start.x * scale + padding, seg.start.y * scale + padding);
+        ctx.lineTo(seg.end.x * scale + padding, seg.end.y * scale + padding);
+      });
+      ctx.closePath();
+      ctx.stroke();
+
+      // Draw Players
+      Object.values(players).forEach((p) => {
+        const isLocal = p.id === myId;
+        const x = (isLocal ? localPlayer.current.x : p.x) * scale + padding;
+        const y = (isLocal ? localPlayer.current.y : p.y) * scale + padding;
+
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(x, y, isLocal ? 4 : 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isLocal) {
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      });
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [players, myId]);
+
+  return (
+    <div className="absolute top-6 right-6 bg-black/60 backdrop-blur-md border border-white/20 rounded-2xl p-2 shadow-2xl overflow-hidden pointer-events-none">
+      <canvas 
+        ref={canvasRef} 
+        width={TRACK_WIDTH * scale + padding * 2} 
+        height={TRACK_HEIGHT * scale + padding * 2}
+        className="block"
+      />
+      <div className="absolute top-2 left-2 text-[8px] font-black text-white/40 uppercase tracking-widest">MINIMAP</div>
+    </div>
+  );
+};
+
 // 3D Components
 const CarModel = ({ color, isLocal, drifting }: { color: string, isLocal?: boolean, drifting?: boolean }) => {
   return (
@@ -216,11 +285,72 @@ const TrackMesh = () => {
         </mesh>
       ))}
       
-      {/* Start Line */}
-      <mesh position={[625, 750, 0.11]} rotation={[0, 0, 0]}>
-        <planeGeometry args={[10, TRACK_RADIUS * 2]} />
-        <meshStandardMaterial color="white" />
-      </mesh>
+      {/* Start / Finish Line Complex */}
+      <group position={[625, 750, 0.11]}>
+        {/* Checkered Pattern Base */}
+        <group>
+          {Array.from({ length: 10 }).map((_, i) => (
+            <React.Fragment key={i}>
+              <mesh position={[-2.5, -TRACK_RADIUS + 5 + i * 10, 0]}>
+                <planeGeometry args={[5, 10]} />
+                <meshStandardMaterial color={i % 2 === 0 ? "white" : "#111"} />
+              </mesh>
+              <mesh position={[2.5, -TRACK_RADIUS + 5 + i * 10, 0]}>
+                <planeGeometry args={[5, 10]} />
+                <meshStandardMaterial color={i % 2 === 0 ? "#111" : "white"} />
+              </mesh>
+            </React.Fragment>
+          ))}
+        </group>
+
+        {/* Neon Glow Strips */}
+        <mesh position={[-5.5, 0, 0.01]}>
+          <planeGeometry args={[1, TRACK_RADIUS * 2]} />
+          <meshStandardMaterial color="#00f2ff" emissive="#00f2ff" emissiveIntensity={5} />
+        </mesh>
+        <mesh position={[5.5, 0, 0.01]}>
+          <planeGeometry args={[1, TRACK_RADIUS * 2]} />
+          <meshStandardMaterial color="#00f2ff" emissive="#00f2ff" emissiveIntensity={5} />
+        </mesh>
+
+        {/* Overhead Arch / Text */}
+        <group rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 25]}>
+           {/* Left Pillar */}
+           <mesh position={[0, -TRACK_RADIUS - 5, -12.5]}>
+             <boxGeometry args={[4, 30, 4]} />
+             <meshStandardMaterial color="#222" metalness={0.8} />
+           </mesh>
+           {/* Right Pillar */}
+           <mesh position={[0, TRACK_RADIUS + 5, -12.5]}>
+             <boxGeometry args={[4, 30, 4]} />
+             <meshStandardMaterial color="#222" metalness={0.8} />
+           </mesh>
+           {/* Top Beam */}
+           <mesh position={[0, 0, 2.5]}>
+             <boxGeometry args={[6, (TRACK_RADIUS + 5) * 2, 4]} />
+             <meshStandardMaterial color="#111" metalness={0.9} />
+           </mesh>
+           
+           {/* Glowing Text */}
+           <Billboard position={[4, 0, 2.5]} rotation={[0, Math.PI/2, 0]}>
+             <Text
+               fontSize={8}
+               color="#00f2ff"
+               font="https://fonts.gstatic.com/s/monoton/v10/5h1aiZUr9yb6Bh98dvJf.woff" // Monoton font for retro feel
+               anchorX="center"
+               anchorY="middle"
+               outlineWidth={0.5}
+               outlineColor="#000"
+             >
+               START / FINISH
+             </Text>
+           </Billboard>
+           
+           {/* Downward Spotlights */}
+           <pointLight position={[0, -20, 0]} intensity={50} color="#00f2ff" distance={60} />
+           <pointLight position={[0, 20, 0]} intensity={50} color="#00f2ff" distance={60} />
+        </group>
+      </group>
     </group>
   );
 };
@@ -240,6 +370,26 @@ const TrackMesh = () => {
   }) => {
     const { camera } = useThree();
     const carRef = useRef<THREE.Group>(null);
+    const smoothedLookAt = useRef(new THREE.Vector3(650, 0, 750));
+    const idealPos = useMemo(() => new THREE.Vector3(), []);
+    const idealLookAt = useMemo(() => new THREE.Vector3(), []);
+
+    const sortedPlayers = useMemo(() => {
+      return Object.values(players).sort((a, b) => {
+        if ((b.laps || 0) !== (a.laps || 0)) {
+          return (b.laps || 0) - (a.laps || 0);
+        }
+        return (a.bestLapTime || Infinity) - (b.bestLapTime || Infinity);
+      });
+    }, [players]);
+
+    const playerRanks = useMemo(() => {
+      const ranks: Record<string, number> = {};
+      sortedPlayers.forEach((p, i) => {
+        ranks[p.id] = i + 1;
+      });
+      return ranks;
+    }, [sortedPlayers]);
   
     const decorations = useMemo(() => {
     const items: { type: 'tree' | 'rock', pos: [number, number, number], scale: number }[] = [];
@@ -294,15 +444,27 @@ const TrackMesh = () => {
       }
 
       if (targetX !== undefined) {
-        // Camera Follow
-        const dist = 40;
-        const height = 20;
+        // Camera Follow Configuration
+        const dist = 45;
+        const height = 25;
+        const lerpFactor = 0.08; // Slightly slower for smoother feel
         
+        // Calculate ideal camera position behind the car
         const targetCamX = targetX - Math.cos(targetAngle) * dist;
         const targetCamZ = targetY - Math.sin(targetAngle) * dist;
         
-        camera.position.lerp(new THREE.Vector3(targetCamX, height, targetCamZ), 0.1);
-        camera.lookAt(targetX, 0, targetY);
+        idealPos.set(targetCamX, height, targetCamZ);
+        idealLookAt.set(targetX, 0, targetY);
+        
+        // Smoothly interpolate camera position
+        camera.position.lerp(idealPos, lerpFactor);
+        
+        // Smoothly interpolate lookAt target to prevent jitter
+        smoothedLookAt.current.lerp(idealLookAt, lerpFactor);
+        camera.lookAt(smoothedLookAt.current);
+        
+        // Ensure camera up vector is stable
+        camera.up.set(0, 1, 0);
       }
     });
 
@@ -337,17 +499,36 @@ const TrackMesh = () => {
       {!isSpectator && (
         <group ref={carRef}>
           <CarModel color={players[myId || '']?.color || 'red'} isLocal drifting={localPlayerRef.current?.drifting} />
-          <Billboard position={[0, 5, 0]}>
-            <Text 
-              fontSize={2.5} 
-              color="white" 
-              anchorX="center" 
-              anchorY="middle"
-              outlineWidth={0.2}
-              outlineColor="#000000"
-            >
-              {players[myId || '']?.name || 'You'}
-            </Text>
+          <Billboard position={[0, 8, 0]}>
+            <group>
+              {/* Rank Badge */}
+              <mesh position={[-4, 0, 0]}>
+                <circleGeometry args={[1.5, 32]} />
+                <meshBasicMaterial color="#fbbf24" />
+              </mesh>
+              <Text
+                position={[-4, 0, 0.1]}
+                fontSize={1.8}
+                color="black"
+                anchorX="center"
+                anchorY="middle"
+                font="https://fonts.gstatic.com/s/monoton/v10/5h1aiZUr9yb6Bh98dvJf.woff"
+              >
+                {playerRanks[myId || ''] || '?'}
+              </Text>
+              {/* Name */}
+              <Text 
+                position={[1, 0, 0]}
+                fontSize={2.5} 
+                color="white" 
+                anchorX="left" 
+                anchorY="middle"
+                outlineWidth={0.2}
+                outlineColor="#000000"
+              >
+                {players[myId || '']?.name || 'You'}
+              </Text>
+            </group>
           </Billboard>
         </group>
       )}
@@ -355,20 +536,40 @@ const TrackMesh = () => {
       {/* Remote Players */}
       {Object.values(players).map(p => {
         if (!isSpectator && p.id === myId) return null;
+        const rank = playerRanks[p.id];
         return (
           <group key={p.id} position={[p.x, 0, p.y]} rotation={[0, -p.angle + Math.PI/2, 0]}>
             <CarModel color={p.color} drifting={p.drifting} isLocal={isSpectator && p.id === spectatedPlayerId} />
-            <Billboard position={[0, 5, 0]}>
-              <Text 
-                fontSize={2.5} 
-                color={isSpectator && p.id === spectatedPlayerId ? "#fbbf24" : "white"} 
-                anchorX="center" 
-                anchorY="middle"
-                outlineWidth={0.2}
-                outlineColor="#000000"
-              >
-                {p.name} {isSpectator && p.id === spectatedPlayerId ? "(SPECTATING)" : ""}
-              </Text>
+            <Billboard position={[0, 8, 0]}>
+              <group>
+                {/* Rank Badge */}
+                <mesh position={[-4, 0, 0]}>
+                  <circleGeometry args={[1.5, 32]} />
+                  <meshBasicMaterial color={isSpectator && p.id === spectatedPlayerId ? "#fbbf24" : "#ffffff"} />
+                </mesh>
+                <Text
+                  position={[-4, 0, 0.1]}
+                  fontSize={1.8}
+                  color="black"
+                  anchorX="center"
+                  anchorY="middle"
+                  font="https://fonts.gstatic.com/s/monoton/v10/5h1aiZUr9yb6Bh98dvJf.woff"
+                >
+                  {rank || '?'}
+                </Text>
+                {/* Name */}
+                <Text 
+                  position={[1, 0, 0]}
+                  fontSize={2.5} 
+                  color={isSpectator && p.id === spectatedPlayerId ? "#fbbf24" : "white"} 
+                  anchorX="left" 
+                  anchorY="middle"
+                  outlineWidth={0.2}
+                  outlineColor="#000000"
+                >
+                  {p.name} {isSpectator && p.id === spectatedPlayerId ? "(SPECTATING)" : ""}
+                </Text>
+              </group>
             </Billboard>
           </group>
         );
@@ -518,12 +719,35 @@ export default function GameCanvas({ initialPlayers, isSpectator: initialIsSpect
       });
     });
 
+    socket.on('playerBoosted', (data: { targetId: string, action: string }) => {
+      if (data.targetId === socket.id) {
+        if (data.action === 'nitro') {
+          localPlayer.current.nitro = 100;
+          setNitro(100);
+        } else if (data.action === 'speed') {
+          localPlayer.current.speed += 15;
+        }
+      }
+      
+      // Visual feedback for everyone
+      setParticles(prev => [
+        ...prev,
+        {
+          id: particleIdCounter.current++,
+          x: players[data.targetId]?.x || 0,
+          y: players[data.targetId]?.y || 0,
+          life: 2.0
+        }
+      ]);
+    });
+
     return () => {
       socket.off('connect');
       socket.off('playerJoinedRoom');
       socket.off('playerMoved');
       socket.off('playerDisconnected');
       socket.off('lapUpdate');
+      socket.off('playerBoosted');
     };
   }, []);
 
@@ -865,24 +1089,39 @@ export default function GameCanvas({ initialPlayers, isSpectator: initialIsSpect
               <div className="space-y-2">
                   {Object.values(players)
                     .map(p => p as Player)
-                    .sort((a, b) => (a.bestLapTime || Infinity) - (b.bestLapTime || Infinity))
+                    .sort((a, b) => {
+                      if ((b.laps || 0) !== (a.laps || 0)) {
+                        return (b.laps || 0) - (a.laps || 0);
+                      }
+                      return (a.bestLapTime || Infinity) - (b.bestLapTime || Infinity);
+                    })
                     .slice(0, 5)
                     .map((p, i) => (
-                      <div key={p.id} className="flex justify-between text-sm">
-                          <span className={`${p.id === socket.id ? 'text-yellow-400 font-bold' : 'text-slate-300'} truncate max-w-[120px]`}>
-                              {i+1}. {p.name}
-                          </span>
-                          <span className="font-mono text-slate-400">
-                              {p.bestLapTime !== Infinity ? formatTime(p.bestLapTime) : '-'}
-                          </span>
+                      <div key={p.id} className="flex justify-between text-sm items-center">
+                          <div className="flex items-center gap-2 truncate max-w-[140px]">
+                              <span className="w-5 h-5 bg-white/10 rounded flex items-center justify-center text-[10px] font-bold text-slate-400">
+                                {i + 1}
+                              </span>
+                              <span className={`${p.id === socket.id ? 'text-yellow-400 font-bold' : 'text-slate-300'} truncate`}>
+                                  {p.name}
+                              </span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className="font-mono text-[10px] text-slate-400">
+                                {p.bestLapTime !== Infinity ? formatTime(p.bestLapTime) : '-'}
+                            </span>
+                            <span className="text-[8px] text-slate-500 uppercase font-bold">
+                              Lap {p.laps || 0}
+                            </span>
+                          </div>
                       </div>
                   ))}
               </div>
           </div>
       </div>
 
-      {/* Top Right: Control Mode Toggle */}
-      <div className="absolute top-6 right-6 pointer-events-auto">
+      {/* Bottom Right: Control Mode Toggle */}
+      <div className="absolute bottom-6 right-6 pointer-events-auto flex flex-col items-end gap-3">
           <button 
             onClick={() => setControlMode(prev => prev === 'pc' ? 'mobile' : 'pc')}
             className="bg-black/50 text-white px-4 py-2 rounded-lg border border-white/10 backdrop-blur-md flex items-center gap-2 hover:bg-white/10 transition-colors"
@@ -892,6 +1131,50 @@ export default function GameCanvas({ initialPlayers, isSpectator: initialIsSpect
               {controlMode === 'pc' ? '💻 PC' : '📱 Móvil'}
             </span>
           </button>
+      </div>
+
+      {/* Minimap */}
+      <Minimap players={players} localPlayer={localPlayer} myId={myId} />
+
+      {/* Admin Panel (Only for the creator) */}
+      {/* Note: In a real app, this would be authenticated. For now, we check the email provided in context. */}
+      {/* Since we don't have a user object here, we'll assume the user who requested this is the one with the email. */}
+      <div className="absolute bottom-6 left-6 pointer-events-auto flex flex-col gap-2">
+          <div className="bg-black/80 text-white p-4 rounded-xl border border-yellow-500/50 backdrop-blur-md shadow-[0_0_15px_rgba(234,179,8,0.2)]">
+              <div className="text-[10px] text-yellow-500 uppercase tracking-widest font-black mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
+                  Creator Tools
+              </div>
+              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                  {Object.values(players).map(p => (
+                      <div key={p.id} className="flex items-center justify-between gap-4 bg-white/5 p-2 rounded-lg border border-white/5">
+                          <div className="flex flex-col">
+                              <span className="text-xs font-bold truncate max-w-[80px]">{p.name}</span>
+                              <span className="text-[8px] text-slate-500 uppercase">Pos: {Math.round(p.x)},{Math.round(p.y)}</span>
+                          </div>
+                          <div className="flex gap-1">
+                              <button 
+                                  onClick={() => socket.emit('adminAction', { targetId: p.id, action: 'nitro' })}
+                                  className="bg-blue-600 hover:bg-blue-500 text-[9px] px-2 py-1 rounded font-bold transition-colors"
+                                  title="Give Nitro"
+                              >
+                                  ⚡
+                              </button>
+                              <button 
+                                  onClick={() => socket.emit('adminAction', { targetId: p.id, action: 'speed' })}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-[9px] px-2 py-1 rounded font-bold transition-colors"
+                                  title="Give Speed Boost"
+                              >
+                                  🚀
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+                  {Object.keys(players).length === 0 && (
+                      <div className="text-[10px] text-slate-500 italic">No players online</div>
+                  )}
+              </div>
+          </div>
       </div>
 
       {/* Top Center: Lap Timer */}

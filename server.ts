@@ -152,6 +152,19 @@ async function startServer() {
       }
     });
 
+    socket.on("creatorMessage", ({ message, sender }) => {
+        // Broadcast to everyone in all rooms
+        io.emit("creatorAnnouncement", { message, sender });
+    });
+
+    socket.on("adminAction", ({ targetId, action }) => {
+      const roomId = socketRoomMap[socket.id];
+      if (roomId && rooms[roomId]) {
+        // Broadcast the boost to everyone in the room
+        io.to(roomId).emit("playerBoosted", { targetId, action });
+      }
+    });
+
     // Game Events (Scoped to Room)
     socket.on("playerMovement", (movementData) => {
       const roomId = socketRoomMap[socket.id];

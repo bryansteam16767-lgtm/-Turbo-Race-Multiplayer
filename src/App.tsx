@@ -27,6 +27,8 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [showUpdates, setShowUpdates] = useState(false);
   const [loginInput, setLoginInput] = useState('');
+  const [creatorMsgInput, setCreatorMsgInput] = useState('');
+  const [announcement, setAnnouncement] = useState<{message: string, sender: string} | null>(null);
   const [error, setError] = useState('');
 
   const [missions, setMissions] = useState([
@@ -127,6 +129,13 @@ export default function App() {
         setActiveRooms(list);
     });
 
+    socket.on('creatorAnnouncement', (data) => {
+        setAnnouncement(data);
+        // Auto-clear announcement after 6 seconds
+        const timer = setTimeout(() => setAnnouncement(null), 6000);
+        return () => clearTimeout(timer);
+    });
+
     return () => {
       socket.off('roomCreated');
       socket.off('roomJoined');
@@ -136,6 +145,7 @@ export default function App() {
       socket.off('error');
       socket.off('hostMigrated');
       socket.off('roomList');
+      socket.off('creatorAnnouncement');
     };
   }, []);
 
@@ -150,6 +160,17 @@ export default function App() {
         return;
     }
     socket.emit('joinRoom', { roomId: joinCode.toUpperCase() });
+  };
+
+  const sendCreatorMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (creatorMsgInput.trim() && isCreator) {
+        socket.emit('creatorMessage', { 
+            message: creatorMsgInput.trim(), 
+            sender: userEmail || 'Creador' 
+        });
+        setCreatorMsgInput('');
+    }
   };
 
   const handleStartGame = () => {
@@ -380,6 +401,46 @@ export default function App() {
           <GameCanvas initialPlayers={players} isSpectator={isSpectator} />
         )}
       </main>
+
+      {/* Global Creator Announcement Overlay */}
+      {announcement && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] w-full max-w-xl px-4 pointer-events-none animate-in slide-in-from-top duration-500">
+            <div className="bg-yellow-500 border-2 border-black shadow-[0_0_20px_rgba(234,179,8,0.5)] p-4 rounded-xl flex items-center gap-4">
+                <div className="bg-black text-yellow-500 p-2 rounded-lg font-black italic text-sm uppercase tracking-tighter">
+                    ANUNCIO
+                </div>
+                <div className="flex-1">
+                    <div className="text-black font-black text-lg leading-tight uppercase italic tracking-tight">
+                        {announcement.message}
+                    </div>
+                    <div className="text-black/60 text-[10px] font-bold uppercase">
+                        Enviado por: {announcement.sender}
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Creator Chat Bar (Only for Creator) */}
+      {isCreator && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] w-full max-w-md px-4">
+            <form onSubmit={sendCreatorMessage} className="bg-slate-900/90 backdrop-blur-md border border-yellow-500/50 p-2 rounded-2xl shadow-2xl flex gap-2">
+                <input 
+                    type="text"
+                    value={creatorMsgInput}
+                    onChange={(e) => setCreatorMsgInput(e.target.value)}
+                    placeholder="Escribe un mensaje global..."
+                    className="flex-1 bg-black/50 border border-slate-700 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-yellow-500 transition-colors"
+                />
+                <button 
+                    type="submit"
+                    className="bg-yellow-500 hover:bg-yellow-400 text-black font-black px-4 py-2 rounded-xl text-xs uppercase transition-all active:scale-95"
+                >
+                    ENVIAR
+                </button>
+            </form>
+        </div>
+      )}
 
       {/* Updates Modal */}
       {showUpdates && (
